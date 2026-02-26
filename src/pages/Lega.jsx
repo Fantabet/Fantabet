@@ -6,6 +6,12 @@ const LEAGUE_COLORS = {
   "Serie A": { bg: "#009246", text: "#fff", flag: "🇮🇹" },
   "Premier League": { bg: "#38003c", text: "#00ff85", flag: "🏴" },
   "Champions League": { bg: "#001489", text: "#ffd700", flag: "⭐" },
+  "Bundesliga": { bg: "#d00000", text: "#fff", flag: "🇩🇪" },
+  "La Liga": { bg: "#ee8700", text: "#fff", flag: "🇪🇸" },
+  "Ligue 1": { bg: "#003090", text: "#fff", flag: "🇫🇷" },
+  "Europa League": { bg: "#f77f00", text: "#fff", flag: "🟠" },
+  "Mondiali": { bg: "#006400", text: "#ffd700", flag: "🌍" },
+  "Europei": { bg: "#003399", text: "#ffcc00", flag: "🇪🇺" },
 };
 
 function calcPunti(pred, reale) {
@@ -43,7 +49,6 @@ function Lega() {
       if (!data.user) { window.location.href = "/login"; return; }
       setUtente(data.user);
 
-      // Carica lega
       const { data: legaData } = await supabase
         .from("leghe")
         .select("*")
@@ -52,14 +57,12 @@ function Lega() {
       if (!legaData) { window.location.href = "/leghe"; return; }
       setLega(legaData);
 
-      // Carica partite
       const { data: partiteData } = await supabase
         .from("partite")
         .select("*")
         .order("match_date");
       if (partiteData) setPartite(partiteData);
 
-      // Carica pronostici
       const { data: pronosticiData } = await supabase
         .from("pronostici")
         .select("*")
@@ -106,9 +109,14 @@ function Lega() {
 
   if (caricamento) return <div style={{ padding: 40, fontFamily: "Arial" }}>Caricamento...</div>;
 
-  const filtrate = filtro === "Tutti" ? partite : partite.filter(p => p.league === filtro);
+  const partiteLega = lega.competizione && lega.competizione !== "Tutte"
+    ? partite.filter(p => p.league === lega.competizione)
+    : partite;
 
-  // Classifica demo
+  const filtrate = filtro === "Tutti" ? partiteLega : partiteLega.filter(p => p.league === filtro);
+
+  const lc = LEAGUE_COLORS[lega.competizione] || { bg: "#1a6b2a", text: "#fff", flag: "⚽" };
+
   const classificaDemo = [
     { username: "diego", punti: 128, partite_g: 18, isMe: true },
     { username: "marco_r", punti: 142, partite_g: 18 },
@@ -125,12 +133,14 @@ function Lega() {
       </div>
 
       {/* Info lega */}
-      <div style={{ background: "#1a6b2a", borderRadius: 12, padding: "16px 24px", marginBottom: 24, color: "#fff" }}>
+      <div style={{ background: lc.bg, borderRadius: 12, padding: "16px 24px", marginBottom: 24, color: "#fff" }}>
         <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>Lega</div>
         <div style={{ fontSize: 24, fontWeight: "bold" }}>{lega.nome}</div>
-        <div style={{ marginTop: 8, display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.7)" }}>
-          <span>🏆 {lega.competizione || "Tutte le competizioni"}</span>
-          <span>🔑 Codice: <strong style={{ color: "#ffd700", letterSpacing: 2 }}>{lega.codice}</strong></span>
+        <div style={{ marginTop: 8, display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.7)", flexWrap: "wrap" }}>
+          <span>{lc.flag} {lega.competizione || "Tutte le competizioni"}</span>
+          <span>👥 max {lega.max_partecipanti || 8} partecipanti</span>
+          <span>{lega.modalita === "campionato" ? "⚽ Campionato" : "⭐ Torneo"}</span>
+          <span>🔑 <strong style={{ color: "#ffd700", letterSpacing: 2 }}>{lega.codice}</strong></span>
         </div>
       </div>
 
@@ -153,102 +163,96 @@ function Lega() {
       {/* TAB PARTITE */}
       {tab === "partite" && (
         <div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
-            {["Tutti", "Serie A", "Premier League", "Champions League"].map(l => (
-              <button key={l} onClick={() => setFiltro(l)} style={{
-                padding: "6px 14px", borderRadius: 20,
-                border: `1px solid ${filtro === l ? "#1a6b2a" : "#ddd"}`,
-                background: filtro === l ? "#1a6b2a" : "transparent",
-                color: filtro === l ? "#fff" : "#666",
-                cursor: "pointer", fontSize: 13
-              }}>{l}</button>
-            ))}
-          </div>
+          {partiteLega.length === 0 ? (
+            <div style={{ border: "2px dashed #ddd", borderRadius: 10, padding: 32, textAlign: "center", color: "#aaa" }}>
+              Nessuna partita disponibile per {lega.competizione}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {filtrate.map(partita => {
+                const pred = pronostici[partita.id];
+                const hasPred = pred?.home !== undefined && pred?.away !== undefined;
+                const reale = partita.gol_home !== null ? partita : null;
+                const pts = reale && pred ? calcPunti(pred, reale) : null;
+                const plc = LEAGUE_COLORS[partita.league] || { bg: "#333", text: "#fff", flag: "⚽" };
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {filtrate.map(partita => {
-              const pred = pronostici[partita.id];
-              const hasPred = pred?.home !== undefined && pred?.away !== undefined;
-              const reale = partita.gol_home !== null ? partita : null;
-              const pts = reale && pred ? calcPunti(pred, reale) : null;
-              const lc = LEAGUE_COLORS[partita.league] || { bg: "#333", text: "#fff", flag: "⚽" };
-
-              return (
-                <div key={partita.id} style={{
-                  background: "#fff", color: "#1a1a1a",
-                  border: `1px solid ${pts !== null ? (pts >= 7 ? "#00c896" : pts >= 3 ? "#f5c518" : "#ff5050") : "#eee"}`,
-                  borderRadius: 12, overflow: "hidden",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
-                }}>
-                  <div style={{ background: lc.bg, padding: "6px 16px", display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ color: lc.text, fontSize: 12, fontWeight: "bold" }}>{lc.flag} {partita.league}</span>
-                    <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}>
-                      {new Date(partita.match_date).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })} · {new Date(partita.match_date).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                  </div>
-
-                  <div style={{ padding: "20px 24px" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 16 }}>
-                      <div style={{ textAlign: "center" }}>
-                        <div style={{ fontWeight: "bold", fontSize: 18 }}>{partita.home}</div>
-                        <div style={{ fontSize: 11, color: "#aaa" }}>Casa</div>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        {!reale ? (
-                          <>
-                            <input type="number" min="0" max="20" value={pred?.home ?? ""}
-                              onChange={e => setPred(partita.id, "home", e.target.value)}
-                              placeholder="–"
-                              style={{ width: 52, height: 52, textAlign: "center", fontSize: 22, fontWeight: "bold", border: `2px solid ${hasPred ? "#1a6b2a" : "#ddd"}`, borderRadius: 8, color: "#1a6b2a", outline: "none", background: "#fff" }}
-                            />
-                            <span style={{ color: "#ccc", fontSize: 20 }}>:</span>
-                            <input type="number" min="0" max="20" value={pred?.away ?? ""}
-                              onChange={e => setPred(partita.id, "away", e.target.value)}
-                              placeholder="–"
-                              style={{ width: 52, height: 52, textAlign: "center", fontSize: 22, fontWeight: "bold", border: `2px solid ${hasPred ? "#1a6b2a" : "#ddd"}`, borderRadius: 8, color: "#1a6b2a", outline: "none", background: "#fff" }}
-                            />
-                          </>
-                        ) : (
-                          <div style={{ textAlign: "center" }}>
-                            <div style={{ fontSize: 32, fontWeight: "bold" }}>{reale.gol_home} – {reale.gol_away}</div>
-                            <div style={{ fontSize: 11, color: "#aaa" }}>Risultato finale</div>
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ textAlign: "center" }}>
-                        <div style={{ fontWeight: "bold", fontSize: 18 }}>{partita.away}</div>
-                        <div style={{ fontSize: 11, color: "#aaa" }}>Ospite</div>
-                      </div>
+                return (
+                  <div key={partita.id} style={{
+                    background: "#fff", color: "#1a1a1a",
+                    border: `1px solid ${pts !== null ? (pts >= 7 ? "#00c896" : pts >= 3 ? "#f5c518" : "#ff5050") : "#eee"}`,
+                    borderRadius: 12, overflow: "hidden",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
+                  }}>
+                    <div style={{ background: plc.bg, padding: "6px 16px", display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ color: plc.text, fontSize: 12, fontWeight: "bold" }}>{plc.flag} {partita.league}</span>
+                      <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}>
+                        {new Date(partita.match_date).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })} · {new Date(partita.match_date).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                      </span>
                     </div>
 
-                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #f5f5f5", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ fontSize: 12, color: "#aaa" }}>
-                        {hasPred && !reale && (salvato[partita.id]
-                          ? <span style={{ color: "#1a6b2a" }}>✓ Salvato: {pred.home}–{pred.away}</span>
-                          : <span style={{ color: "#f5a623" }}>● Non salvato</span>)}
-                        {!hasPred && !reale && "Inserisci il pronostico"}
-                        {reale && pred && <span>Tuo: {pred.home}–{pred.away}</span>}
+                    <div style={{ padding: "20px 24px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 16 }}>
+                        <div style={{ textAlign: "center" }}>
+                          <div style={{ fontWeight: "bold", fontSize: 18 }}>{partita.home}</div>
+                          <div style={{ fontSize: 11, color: "#aaa" }}>Casa</div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {!reale ? (
+                            <>
+                              <input type="number" min="0" max="20" value={pred?.home ?? ""}
+                                onChange={e => setPred(partita.id, "home", e.target.value)}
+                                placeholder="–"
+                                style={{ width: 52, height: 52, textAlign: "center", fontSize: 22, fontWeight: "bold", border: `2px solid ${hasPred ? "#1a6b2a" : "#ddd"}`, borderRadius: 8, color: "#1a6b2a", outline: "none", background: "#fff" }}
+                              />
+                              <span style={{ color: "#ccc", fontSize: 20 }}>:</span>
+                              <input type="number" min="0" max="20" value={pred?.away ?? ""}
+                                onChange={e => setPred(partita.id, "away", e.target.value)}
+                                placeholder="–"
+                                style={{ width: 52, height: 52, textAlign: "center", fontSize: 22, fontWeight: "bold", border: `2px solid ${hasPred ? "#1a6b2a" : "#ddd"}`, borderRadius: 8, color: "#1a6b2a", outline: "none", background: "#fff" }}
+                              />
+                            </>
+                          ) : (
+                            <div style={{ textAlign: "center" }}>
+                              <div style={{ fontSize: 32, fontWeight: "bold" }}>{reale.gol_home} – {reale.gol_away}</div>
+                              <div style={{ fontSize: 11, color: "#aaa" }}>Risultato finale</div>
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ textAlign: "center" }}>
+                          <div style={{ fontWeight: "bold", fontSize: 18 }}>{partita.away}</div>
+                          <div style={{ fontSize: 11, color: "#aaa" }}>Ospite</div>
+                        </div>
                       </div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        {pts !== null && (
-                          <span style={{
-                            padding: "4px 12px", borderRadius: 20, fontWeight: "bold", fontSize: 13,
-                            background: pts >= 7 ? "rgba(0,200,150,0.1)" : pts >= 3 ? "rgba(245,197,24,0.1)" : "rgba(255,80,80,0.1)",
-                            color: pts >= 7 ? "#00c896" : pts >= 3 ? "#d4a017" : "#ff5050"
-                          }}>{pts === 10 ? "🔥 " : ""}+{pts} pt</span>
-                        )}
-                        {hasPred && !reale && !salvato[partita.id] && (
-                          <button onClick={() => salvaPronostico(partita.id)} style={{ padding: "6px 14px", background: "#1a6b2a", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
-                            Salva
-                          </button>
-                        )}
+
+                      <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #f5f5f5", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={{ fontSize: 12, color: "#aaa" }}>
+                          {hasPred && !reale && (salvato[partita.id]
+                            ? <span style={{ color: "#1a6b2a" }}>✓ Salvato: {pred.home}–{pred.away}</span>
+                            : <span style={{ color: "#f5a623" }}>● Non salvato</span>)}
+                          {!hasPred && !reale && "Inserisci il pronostico"}
+                          {reale && pred && <span>Tuo: {pred.home}–{pred.away}</span>}
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          {pts !== null && (
+                            <span style={{
+                              padding: "4px 12px", borderRadius: 20, fontWeight: "bold", fontSize: 13,
+                              background: pts >= 7 ? "rgba(0,200,150,0.1)" : pts >= 3 ? "rgba(245,197,24,0.1)" : "rgba(255,80,80,0.1)",
+                              color: pts >= 7 ? "#00c896" : pts >= 3 ? "#d4a017" : "#ff5050"
+                            }}>{pts === 10 ? "🔥 " : ""}+{pts} pt</span>
+                          )}
+                          {hasPred && !reale && !salvato[partita.id] && (
+                            <button onClick={() => salvaPronostico(partita.id)} style={{ padding: "6px 14px", background: "#1a6b2a", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
+                              Salva
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -260,7 +264,8 @@ function Lega() {
               background: g.isMe ? "rgba(26,107,42,0.08)" : "#fff",
               border: `1px solid ${g.isMe ? "rgba(26,107,42,0.3)" : "#eee"}`,
               borderRadius: 10, padding: "16px 20px",
-              display: "flex", alignItems: "center", gap: 16
+              display: "flex", alignItems: "center", gap: 16,
+              color: "#1a1a1a"
             }}>
               <div style={{ fontSize: i < 3 ? 28 : 20, width: 36, textAlign: "center", color: i >= 3 ? "#ccc" : "inherit", fontWeight: "bold" }}>
                 {["🥇","🥈","🥉"][i] || `${i+1}°`}
