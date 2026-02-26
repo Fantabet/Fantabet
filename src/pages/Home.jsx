@@ -62,22 +62,6 @@ function Home() {
           </div>
           <span style={{ color: "#1a6b2a", fontSize: 20 }}>→</span>
         </a>
-
-        <a href="/partite" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 20, background: "#fff", border: "1px solid #eee", borderRadius: 10, textDecoration: "none", color: "#333" }}>
-          <div>
-            <div style={{ fontWeight: "bold", fontSize: 16 }}>⚽ Partite</div>
-            <div style={{ fontSize: 13, color: "#999", marginTop: 4 }}>Inserisci i tuoi pronostici</div>
-          </div>
-          <span style={{ color: "#1a6b2a", fontSize: 20 }}>→</span>
-        </a>
-
-        <a href="/classifica" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 20, background: "#fff", border: "1px solid #eee", borderRadius: 10, textDecoration: "none", color: "#333" }}>
-          <div>
-            <div style={{ fontWeight: "bold", fontSize: 16 }}>📊 Classifica</div>
-            <div style={{ fontSize: 13, color: "#999", marginTop: 4 }}>Chi è il più bravo?</div>
-          </div>
-          <span style={{ color: "#1a6b2a", fontSize: 20 }}>→</span>
-        </a>
       </div>
     </div>
   );
