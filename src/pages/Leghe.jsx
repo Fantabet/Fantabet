@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabase";
+import { t } from "../i18n";
 
 const COMPETIZIONI = [
   { value: "Serie A", label: "🇮🇹 Serie A", modalita: "campionato" },
@@ -39,11 +40,24 @@ function Leghe() {
   }, []);
 
   async function caricaLeghe(userId) {
-    const { data } = await supabase
+    // Carica leghe create dall'utente
+    const { data: legheCreate } = await supabase
       .from("leghe")
       .select("*")
       .eq("creatore_id", userId);
-    if (data) setLeghe(data);
+
+    // Carica leghe a cui l'utente si è unito
+    const { data: membranze } = await supabase
+      .from("membri_lega")
+      .select("lega_id, leghe(*)")
+      .eq("user_id", userId);
+
+    const legheJoin = membranze?.map(m => m.leghe) || [];
+
+    // Unisci evitando duplicati
+    const tuttiIds = new Set((legheCreate || []).map(l => l.id));
+    const legheExtra = legheJoin.filter(l => !tuttiIds.has(l.id));
+    setLeghe([...(legheCreate || []), ...legheExtra]);
   }
 
   function generaCodice() {
@@ -55,15 +69,23 @@ function Leghe() {
     e.preventDefault();
     setErrore(""); setSuccesso("");
     const codice = generaCodice();
-    const { error } = await supabase.from("leghe").insert({
+    const { data, error } = await supabase.from("leghe").insert({
       nome: nomeLega,
       codice,
       creatore_id: utente.id,
       competizione,
       modalita: modalitaAuto,
       max_partecipanti: maxPartecipanti,
-    });
+    }).select().single();
+
     if (error) { setErrore("Errore nella creazione della lega"); return; }
+
+    // Aggiungi il creatore come membro
+    await supabase.from("membri_lega").insert({
+      lega_id: data.id,
+      user_id: utente.id,
+    });
+
     setSuccesso(`Lega "${nomeLega}" creata! Codice: ${codice}`);
     setNomeLega("");
     setMostraForm(false);
@@ -73,14 +95,44 @@ function Leghe() {
   async function uniscitiLega(e) {
     e.preventDefault();
     setErrore(""); setSuccesso("");
-    const { data, error } = await supabase
+
+    const { data: legaData, error } = await supabase
       .from("leghe")
       .select("*")
       .eq("codice", codiceJoin.toUpperCase())
       .single();
-    if (error || !data) { setErrore("Codice non valido"); return; }
-    setSuccesso(`Sei entrato nella lega "${data.nome}"!`);
+
+    if (error || !legaData) { setErrore("Codice non valido"); return; }
+
+    // Controlla se già membro
+    const { data: giaMembro } = await supabase
+      .from("membri_lega")
+      .select("id")
+      .eq("lega_id", legaData.id)
+      .eq("user_id", utente.id)
+      .single();
+
+    if (giaMembro) { setErrore("Sei già in questa lega!"); return; }
+
+    // Controlla se lega piena
+    const { count } = await supabase
+      .from("membri_lega")
+      .select("id", { count: "exact" })
+      .eq("lega_id", legaData.id);
+
+    if (count >= legaData.max_partecipanti) { setErrore("Lega al completo!"); return; }
+
+    // Aggiungi membro
+    const { error: joinError } = await supabase.from("membri_lega").insert({
+      lega_id: legaData.id,
+      user_id: utente.id,
+    });
+
+    if (joinError) { setErrore("Errore nell'iscrizione"); return; }
+
+    setSuccesso(`Sei entrato nella lega "${legaData.nome}"!`);
     setCodiceJoin("");
+    await caricaLeghe(utente.id);
   }
 
   if (caricamento) return <div style={{ padding: 40, fontFamily: "Arial" }}>Caricamento...</div>;
@@ -89,40 +141,30 @@ function Leghe() {
     <div style={{ maxWidth: 600, margin: "40px auto", padding: 40, fontFamily: "Arial" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
         <h1 style={{ color: "#1a6b2a" }}>⚽ Fantabet</h1>
-        <a href="/" style={{ color: "#999", fontSize: 14, textDecoration: "none" }}>← Home</a>
+        <a href="/" style={{ color: "#999", fontSize: 14, textDecoration: "none" }}>← {t("home")}</a>
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h2>🏆 Le tue leghe</h2>
+        <h2>🏆 {t("mieLeghe")}</h2>
         <button onClick={() => setMostraForm(!mostraForm)} style={{ padding: "10px 20px", background: "#1a6b2a", color: "#fff", border: "none", borderRadius: 6, fontSize: 14, cursor: "pointer" }}>
-          {mostraForm ? "✕ Annulla" : "+ Crea lega"}
+          {mostraForm ? "✕ Annulla" : `+ ${t("creaLega")}`}
         </button>
       </div>
 
-      {/* Form crea lega */}
       {mostraForm && (
         <div style={{ background: "#f9f9f9", borderRadius: 10, padding: 24, marginBottom: 20 }}>
           <h3 style={{ marginBottom: 20, color: "#333" }}>Nuova lega</h3>
           <form onSubmit={creaLega}>
-
             <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", marginBottom: 6, fontSize: 14, color: "#333" }}>Nome della lega</label>
-              <input
-                value={nomeLega}
-                onChange={e => setNomeLega(e.target.value)}
-                placeholder="Es. Serie & Friends"
-                required
-                style={{ width: "100%", padding: "10px 14px", borderRadius: 6, border: "1px solid #ddd", fontSize: 15, boxSizing: "border-box" }}
-              />
+              <label style={{ display: "block", marginBottom: 6, fontSize: 14, color: "#333" }}>{t("nomeLega")}</label>
+              <input value={nomeLega} onChange={e => setNomeLega(e.target.value)} placeholder="Es. Serie & Friends" required
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 6, border: "1px solid #ddd", fontSize: 15, boxSizing: "border-box" }} />
             </div>
 
             <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", marginBottom: 6, fontSize: 14, color: "#333" }}>Competizione</label>
-              <select
-                value={competizione}
-                onChange={e => setCompetizione(e.target.value)}
-                style={{ width: "100%", padding: "10px 14px", borderRadius: 6, border: "1px solid #ddd", fontSize: 15, boxSizing: "border-box", background: "#fff" }}
-              >
+              <label style={{ display: "block", marginBottom: 6, fontSize: 14, color: "#333" }}>{t("competizione")}</label>
+              <select value={competizione} onChange={e => setCompetizione(e.target.value)}
+                style={{ width: "100%", padding: "10px 14px", borderRadius: 6, border: "1px solid #ddd", fontSize: 15, boxSizing: "border-box", background: "#fff" }}>
                 <optgroup label="🏆 Campionati">
                   {COMPETIZIONI.filter(c => c.modalita === "campionato").map(c => (
                     <option key={c.value} value={c.value}>{c.label}</option>
@@ -138,12 +180,12 @@ function Leghe() {
 
             <div style={{ marginBottom: 16, background: modalitaAuto === "campionato" ? "rgba(26,107,42,0.08)" : "rgba(0,20,137,0.08)", borderRadius: 8, padding: "10px 14px" }}>
               <span style={{ fontSize: 13, color: modalitaAuto === "campionato" ? "#1a6b2a" : "#001489", fontWeight: "bold" }}>
-                {modalitaAuto === "campionato" ? "⚽ Modalità Campionato — scontri diretti a coppie" : "⭐ Modalità Torneo — classifica a punti"}
+                {modalitaAuto === "campionato" ? `⚽ ${t("modalitaCampionato")}` : `⭐ ${t("modalitaTorneo")}`}
               </span>
             </div>
 
             <div style={{ marginBottom: 20 }}>
-              <label style={{ display: "block", marginBottom: 6, fontSize: 14, color: "#333" }}>Partecipanti massimi</label>
+              <label style={{ display: "block", marginBottom: 6, fontSize: 14, color: "#333" }}>{t("partecipanti")}</label>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {[4, 6, 8, 10, 12, 16].map(n => (
                   <button key={n} type="button" onClick={() => setMaxPartecipanti(n)} style={{
@@ -158,24 +200,18 @@ function Leghe() {
             </div>
 
             <button type="submit" style={{ width: "100%", padding: "12px", background: "#1a6b2a", color: "#fff", border: "none", borderRadius: 6, fontSize: 16, cursor: "pointer" }}>
-              Crea lega
+              {t("creaLega")}
             </button>
           </form>
         </div>
       )}
 
-      {/* Unisciti */}
       <div style={{ background: "#f9f9f9", borderRadius: 10, padding: 24, marginBottom: 20 }}>
-        <h3 style={{ marginBottom: 16, color: "#333" }}>Entra in una lega</h3>
+        <h3 style={{ marginBottom: 16, color: "#333" }}>{t("entraLega")}</h3>
         <form onSubmit={uniscitiLega} style={{ display: "flex", gap: 10 }}>
-          <input
-            value={codiceJoin}
-            onChange={e => setCodiceJoin(e.target.value.toUpperCase())}
-            placeholder="Inserisci codice..."
-            required
-            maxLength={6}
-            style={{ flex: 1, padding: "10px 14px", borderRadius: 6, border: "1px solid #ddd", fontSize: 15, letterSpacing: 3, fontWeight: "bold" }}
-          />
+          <input value={codiceJoin} onChange={e => setCodiceJoin(e.target.value.toUpperCase())}
+            placeholder={t("inserisciCodice")} required maxLength={6}
+            style={{ flex: 1, padding: "10px 14px", borderRadius: 6, border: "1px solid #ddd", fontSize: 15, letterSpacing: 3, fontWeight: "bold" }} />
           <button type="submit" style={{ padding: "10px 20px", background: "#333", color: "#fff", border: "none", borderRadius: 6, fontSize: 15, cursor: "pointer" }}>
             Entra
           </button>
@@ -185,10 +221,9 @@ function Leghe() {
       {errore && <p style={{ color: "red", marginBottom: 16 }}>{errore}</p>}
       {successo && <p style={{ color: "#1a6b2a", fontWeight: "bold", marginBottom: 16 }}>{successo}</p>}
 
-      {/* Lista leghe */}
       {leghe.length === 0 ? (
         <div style={{ border: "2px dashed #ddd", borderRadius: 10, padding: 32, textAlign: "center", color: "#aaa" }}>
-          Non hai ancora creato nessuna lega
+          {t("nonHaiLeghe")}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
