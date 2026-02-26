@@ -3,8 +3,7 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Leghe from "./pages/Leghe";
-import Partite from "./pages/Partite";
-import Classifica from "./pages/Classifica";
+import Lega from "./pages/Lega";
 
 function App() {
   return (
@@ -14,8 +13,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/leghe" element={<Leghe />} />
-        <Route path="/partite" element={<Partite />} />
-        <Route path="/classifica" element={<Classifica />} />
+        <Route path="/lega/:id" element={<Lega />} />
       </Routes>
     </BrowserRouter>
   );

@@ -13,10 +13,7 @@ function Leghe() {
   useEffect(() => {
     async function init() {
       const { data } = await supabase.auth.getUser();
-      if (!data.user) {
-        window.location.href = "/login";
-        return;
-      }
+      if (!data.user) { window.location.href = "/login"; return; }
       setUtente(data.user);
       await caricaLeghe(data.user.id);
       setCaricamento(false);
@@ -46,10 +43,7 @@ function Leghe() {
       codice,
       creatore_id: utente.id
     });
-    if (error) {
-      setErrore("Errore nella creazione della lega");
-      return;
-    }
+    if (error) { setErrore("Errore nella creazione della lega"); return; }
     setSuccesso(`Lega "${nomeLega}" creata! Codice: ${codice}`);
     setNomeLega("");
     await caricaLeghe(utente.id);
@@ -63,10 +57,7 @@ function Leghe() {
       .select("*")
       .eq("codice", codiceJoin.toUpperCase())
       .single();
-    if (error || !data) {
-      setErrore("Codice non valido");
-      return;
-    }
+    if (error || !data) { setErrore("Codice non valido"); return; }
     setSuccesso(`Sei entrato nella lega "${data.nome}"!`);
     setCodiceJoin("");
   }
@@ -128,18 +119,17 @@ function Leghe() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {leghe.map(lega => (
-            <div key={lega.id} style={{ background: "#fff", border: "1px solid #eee", borderRadius: 10, padding: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <div style={{ fontWeight: "bold", fontSize: 16 }}>{lega.nome}</div>
-                <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>Codice invito: <strong style={{ letterSpacing: 2, color: "#1a6b2a" }}>{lega.codice}</strong></div>
+            <a key={lega.id} href={`/lega/${lega.id}`} style={{ textDecoration: "none" }}>
+              <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 10, padding: 20, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+                <div>
+                  <div style={{ fontWeight: "bold", fontSize: 16, color: "#333" }}>{lega.nome}</div>
+                  <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
+                    Codice: <strong style={{ letterSpacing: 2, color: "#1a6b2a" }}>{lega.codice}</strong>
+                  </div>
+                </div>
+                <span style={{ color: "#1a6b2a", fontSize: 20 }}>→</span>
               </div>
-              <button
-                onClick={() => navigator.clipboard.writeText(lega.codice)}
-                style={{ padding: "6px 14px", background: "transparent", border: "1px solid #ddd", borderRadius: 6, cursor: "pointer", fontSize: 12, color: "#666" }}
-              >
-                📋 Copia
-              </button>
-            </div>
+            </a>
           ))}
         </div>
       )}
