@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../supabase";
+import { t } from "../i18n";
 
 const LEAGUE_COLORS = {
   "Serie A": { bg: "#009246", text: "#fff", flag: "🇮🇹" },
@@ -39,8 +40,8 @@ function Lega() {
   const [partite, setPartite] = useState([]);
   const [pronostici, setPronostici] = useState({});
   const [salvato, setSalvato] = useState({});
+  const [classifica, setClassifica] = useState([]);
   const [tab, setTab] = useState("partite");
-  const [filtro, setFiltro] = useState("Tutti");
   const [caricamento, setCaricamento] = useState(true);
 
   useEffect(() => {
@@ -63,6 +64,7 @@ function Lega() {
         .order("match_date");
       if (partiteData) setPartite(partiteData);
 
+      // Carica pronostici utente corrente
       const { data: pronosticiData } = await supabase
         .from("pronostici")
         .select("*")
@@ -75,6 +77,49 @@ function Lega() {
         });
         setPronostici(map);
         setSalvato(Object.fromEntries(pronosticiData.map(p => [p.partita_id, true])));
+      }
+
+      // Carica classifica reale
+      const { data: membri } = await supabase
+        .from("membri_lega")
+        .select("user_id, profiles(username)")
+        .eq("lega_id", id);
+
+      if (membri && partiteData) {
+        const classificaCalcolata = await Promise.all(membri.map(async (membro) => {
+          const { data: pron } = await supabase
+            .from("pronostici")
+            .select("*")
+            .eq("user_id", membro.user_id)
+            .eq("lega_id", id);
+
+          let puntiTotali = 0;
+          let partiteGiocate = 0;
+
+          (pron || []).forEach(p => {
+            const partita = partiteData.find(pt => pt.id === p.partita_id);
+            if (partita && partita.gol_home !== null) {
+              const pts = calcPunti(
+                { home: p.gol_home, away: p.gol_away },
+                partita
+              );
+              if (pts !== null) {
+                puntiTotali += pts;
+                partiteGiocate++;
+              }
+            }
+          });
+
+          return {
+            user_id: membro.user_id,
+            username: membro.profiles?.username || "Utente",
+            punti: puntiTotali,
+            partite_g: partiteGiocate,
+            isMe: membro.user_id === data.user.id,
+          };
+        }));
+
+        setClassifica(classificaCalcolata.sort((a, b) => b.punti - a.punti));
       }
 
       setCaricamento(false);
@@ -113,63 +158,51 @@ function Lega() {
     ? partite.filter(p => p.league === lega.competizione)
     : partite;
 
-  const filtrate = filtro === "Tutti" ? partiteLega : partiteLega.filter(p => p.league === filtro);
-
   const lc = LEAGUE_COLORS[lega.competizione] || { bg: "#1a6b2a", text: "#fff", flag: "⚽" };
-
-  const classificaDemo = [
-    { username: "diego", punti: 128, partite_g: 18, isMe: true },
-    { username: "marco_r", punti: 142, partite_g: 18 },
-    { username: "giulia_t", punti: 115, partite_g: 17 },
-  ].sort((a, b) => b.punti - a.punti);
 
   return (
     <div style={{ maxWidth: 700, margin: "40px auto", padding: "0 20px 60px", fontFamily: "Arial" }}>
 
-      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <h1 style={{ color: "#1a6b2a" }}>⚽ Fantabet</h1>
-        <a href="/leghe" style={{ color: "#999", fontSize: 14, textDecoration: "none" }}>← Le mie leghe</a>
+        <a href="/leghe" style={{ color: "#999", fontSize: 14, textDecoration: "none" }}>← {t("mieLeghe")}</a>
       </div>
 
-      {/* Info lega */}
       <div style={{ background: lc.bg, borderRadius: 12, padding: "16px 24px", marginBottom: 24, color: "#fff" }}>
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>Lega</div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>{t("lega")}</div>
         <div style={{ fontSize: 24, fontWeight: "bold" }}>{lega.nome}</div>
         <div style={{ marginTop: 8, display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.7)", flexWrap: "wrap" }}>
-          <span>{lc.flag} {lega.competizione || "Tutte le competizioni"}</span>
-          <span>👥 max {lega.max_partecipanti || 8} partecipanti</span>
-          <span>{lega.modalita === "campionato" ? "⚽ Campionato" : "⭐ Torneo"}</span>
+          <span>{lc.flag} {lega.competizione || t("tutteCompetizioni")}</span>
+          <span>👥 max {lega.max_partecipanti || 8}</span>
+          <span>{lega.modalita === "campionato" ? "⚽ " + t("campionato") : "⭐ " + t("torneo")}</span>
           <span>🔑 <strong style={{ color: "#ffd700", letterSpacing: 2 }}>{lega.codice}</strong></span>
         </div>
       </div>
 
-      {/* Tab */}
       <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "#f5f5f5", borderRadius: 8, padding: 4 }}>
-        {["partite", "classifica"].map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
+        {["partite", "classifica"].map(tb => (
+          <button key={tb} onClick={() => setTab(tb)} style={{
             flex: 1, padding: "10px", borderRadius: 6, border: "none",
-            background: tab === t ? "#fff" : "transparent",
-            fontWeight: tab === t ? "bold" : "normal",
-            color: tab === t ? "#1a6b2a" : "#999",
+            background: tab === tb ? "#fff" : "transparent",
+            fontWeight: tab === tb ? "bold" : "normal",
+            color: tab === tb ? "#1a6b2a" : "#999",
             cursor: "pointer", fontSize: 14,
-            boxShadow: tab === t ? "0 1px 4px rgba(0,0,0,0.1)" : "none"
+            boxShadow: tab === tb ? "0 1px 4px rgba(0,0,0,0.1)" : "none"
           }}>
-            {t === "partite" ? "🗓 Partite" : "🏆 Classifica"}
+            {tb === "partite" ? `🗓 ${t("partite")}` : `🏆 ${t("classifica")}`}
           </button>
         ))}
       </div>
 
-      {/* TAB PARTITE */}
       {tab === "partite" && (
         <div>
           {partiteLega.length === 0 ? (
             <div style={{ border: "2px dashed #ddd", borderRadius: 10, padding: 32, textAlign: "center", color: "#aaa" }}>
-              Nessuna partita disponibile per {lega.competizione}
+              {t("nessunaPart")} {lega.competizione}
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {filtrate.map(partita => {
+              {partiteLega.map(partita => {
                 const pred = pronostici[partita.id];
                 const hasPred = pred?.home !== undefined && pred?.away !== undefined;
                 const reale = partita.gol_home !== null ? partita : null;
@@ -194,7 +227,7 @@ function Lega() {
                       <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 16 }}>
                         <div style={{ textAlign: "center" }}>
                           <div style={{ fontWeight: "bold", fontSize: 18 }}>{partita.home}</div>
-                          <div style={{ fontSize: 11, color: "#aaa" }}>Casa</div>
+                          <div style={{ fontSize: 11, color: "#aaa" }}>{t("casa")}</div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           {!reale ? (
@@ -214,22 +247,22 @@ function Lega() {
                           ) : (
                             <div style={{ textAlign: "center" }}>
                               <div style={{ fontSize: 32, fontWeight: "bold" }}>{reale.gol_home} – {reale.gol_away}</div>
-                              <div style={{ fontSize: 11, color: "#aaa" }}>Risultato finale</div>
+                              <div style={{ fontSize: 11, color: "#aaa" }}>{t("risultatoFinale")}</div>
                             </div>
                           )}
                         </div>
                         <div style={{ textAlign: "center" }}>
                           <div style={{ fontWeight: "bold", fontSize: 18 }}>{partita.away}</div>
-                          <div style={{ fontSize: 11, color: "#aaa" }}>Ospite</div>
+                          <div style={{ fontSize: 11, color: "#aaa" }}>{t("ospite")}</div>
                         </div>
                       </div>
 
                       <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #f5f5f5", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <div style={{ fontSize: 12, color: "#aaa" }}>
                           {hasPred && !reale && (salvato[partita.id]
-                            ? <span style={{ color: "#1a6b2a" }}>✓ Salvato: {pred.home}–{pred.away}</span>
-                            : <span style={{ color: "#f5a623" }}>● Non salvato</span>)}
-                          {!hasPred && !reale && "Inserisci il pronostico"}
+                            ? <span style={{ color: "#1a6b2a" }}>✓ {t("salvato")}: {pred.home}–{pred.away}</span>
+                            : <span style={{ color: "#f5a623" }}>● {t("nonSalvato")}</span>)}
+                          {!hasPred && !reale && t("inserisciPronostico")}
                           {reale && pred && <span>Tuo: {pred.home}–{pred.away}</span>}
                         </div>
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -242,7 +275,7 @@ function Lega() {
                           )}
                           {hasPred && !reale && !salvato[partita.id] && (
                             <button onClick={() => salvaPronostico(partita.id)} style={{ padding: "6px 14px", background: "#1a6b2a", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
-                              Salva
+                              {t("salva")}
                             </button>
                           )}
                         </div>
@@ -256,36 +289,41 @@ function Lega() {
         </div>
       )}
 
-      {/* TAB CLASSIFICA */}
       {tab === "classifica" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {classificaDemo.map((g, i) => (
-            <div key={g.username} style={{
-              background: g.isMe ? "rgba(26,107,42,0.08)" : "#fff",
-              border: `1px solid ${g.isMe ? "rgba(26,107,42,0.3)" : "#eee"}`,
-              borderRadius: 10, padding: "16px 20px",
-              display: "flex", alignItems: "center", gap: 16,
-              color: "#1a1a1a"
-            }}>
-              <div style={{ fontSize: i < 3 ? 28 : 20, width: 36, textAlign: "center", color: i >= 3 ? "#ccc" : "inherit", fontWeight: "bold" }}>
-                {["🥇","🥈","🥉"][i] || `${i+1}°`}
-              </div>
-              <div style={{ width: 40, height: 40, borderRadius: "50%", background: g.isMe ? "#1a6b2a" : "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", fontSize: 14, color: g.isMe ? "#fff" : "#999" }}>
-                {g.username.slice(0,2).toUpperCase()}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: "bold", fontSize: 15, color: "#333" }}>
-                  {g.username}
-                  {g.isMe && <span style={{ marginLeft: 8, fontSize: 10, background: "#1a6b2a", color: "#fff", padding: "2px 6px", borderRadius: 4 }}>TU</span>}
-                </div>
-                <div style={{ fontSize: 12, color: "#aaa", marginTop: 2 }}>{g.partite_g} partite giocate</div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 26, fontWeight: "bold", color: g.isMe ? "#1a6b2a" : "#333" }}>{g.punti}</div>
-                <div style={{ fontSize: 11, color: "#aaa" }}>{punteggioToGol(g.punti)} gol virtuali</div>
-              </div>
+          {classifica.length === 0 ? (
+            <div style={{ border: "2px dashed #ddd", borderRadius: 10, padding: 32, textAlign: "center", color: "#aaa" }}>
+              Nessun membro nella lega
             </div>
-          ))}
+          ) : (
+            classifica.map((g, i) => (
+              <div key={g.user_id} style={{
+                background: g.isMe ? "rgba(26,107,42,0.08)" : "#fff",
+                border: `1px solid ${g.isMe ? "rgba(26,107,42,0.3)" : "#eee"}`,
+                borderRadius: 10, padding: "16px 20px",
+                display: "flex", alignItems: "center", gap: 16,
+                color: "#1a1a1a"
+              }}>
+                <div style={{ fontSize: i < 3 ? 28 : 20, width: 36, textAlign: "center", color: i >= 3 ? "#ccc" : "inherit", fontWeight: "bold" }}>
+                  {["🥇","🥈","🥉"][i] || `${i+1}°`}
+                </div>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: g.isMe ? "#1a6b2a" : "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", fontSize: 14, color: g.isMe ? "#fff" : "#999" }}>
+                  {g.username.slice(0,2).toUpperCase()}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: "bold", fontSize: 15, color: "#333" }}>
+                    {g.username}
+                    {g.isMe && <span style={{ marginLeft: 8, fontSize: 10, background: "#1a6b2a", color: "#fff", padding: "2px 6px", borderRadius: 4 }}>TU</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#aaa", marginTop: 2 }}>{g.partite_g} {t("partiteGiocate")}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 26, fontWeight: "bold", color: g.isMe ? "#1a6b2a" : "#333" }}>{g.punti}</div>
+                  <div style={{ fontSize: 11, color: "#aaa" }}>{punteggioToGol(g.punti)} {t("golVirtuali")}</div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       )}
     </div>
