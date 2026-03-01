@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Leghe from "./pages/Leghe";
 import Lega from "./pages/Lega";
+import Admin from "./pages/Admin";
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/leghe" element={<Leghe />} />
         <Route path="/lega/:id" element={<Lega />} />
+        <Route path="/admin" element={<Admin />} />
       </Routes>
     </BrowserRouter>
   );
