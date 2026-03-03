@@ -17,15 +17,9 @@ const LEAGUE_COLORS = {
 };
 
 const GIORNATE_PER_COMPETIZIONE = {
-  "Serie A": 38,
-  "Premier League": 38,
-  "Bundesliga": 34,
-  "La Liga": 38,
-  "Ligue 1": 34,
-  "Champions League": 8,
-  "Europa League": 8,
-  "Mondiali": 7,
-  "Europei": 7,
+  "Serie A": 38, "Premier League": 38, "Bundesliga": 34,
+  "La Liga": 38, "Ligue 1": 34, "Champions League": 8,
+  "Europa League": 8, "Mondiali": 7, "Europei": 7,
 };
 
 function calcPunti(pred, reale) {
@@ -39,6 +33,11 @@ function calcPunti(pred, reale) {
   if ((pred.home + pred.away > 2.5) === (reale.gol_home + reale.gol_away > 2.5)) pts += 1;
   if ((pred.home > 0 && pred.away > 0) === (reale.gol_home > 0 && reale.gol_away > 0)) pts += 1;
   return pts;
+}
+
+function punteggioToGol(punti) {
+  if (punti < 40) return 0;
+  return Math.floor((punti - 36) / 4);
 }
 
 function Lega() {
@@ -61,58 +60,29 @@ function Lega() {
       if (!data.user) { window.location.href = "/login"; return; }
       setUtente(data.user);
 
-      const { data: legaData } = await supabase
-        .from("leghe")
-        .select("*")
-        .eq("id", id)
-        .single();
+      const { data: legaData } = await supabase.from("leghe").select("*").eq("id", id).single();
       if (!legaData) { window.location.href = "/leghe"; return; }
       setLega(legaData);
 
-      const { data: partiteData } = await supabase
-        .from("partite")
-        .select("*")
-        .order("match_date");
+      const { data: partiteData } = await supabase.from("partite").select("*").order("match_date");
       if (partiteData) setPartite(partiteData);
 
-      const { data: pronosticiData } = await supabase
-        .from("pronostici")
-        .select("*")
-        .eq("user_id", data.user.id)
-        .eq("lega_id", id);
+      const { data: pronosticiData } = await supabase.from("pronostici").select("*").eq("user_id", data.user.id).eq("lega_id", id);
       if (pronosticiData) {
         const map = {};
-        pronosticiData.forEach(p => {
-          map[p.partita_id] = { home: p.gol_home, away: p.gol_away };
-        });
+        pronosticiData.forEach(p => { map[p.partita_id] = { home: p.gol_home, away: p.gol_away }; });
         setPronostici(map);
         setSalvato(Object.fromEntries(pronosticiData.map(p => [p.partita_id, true])));
       }
 
-      // Carica membri
-      const { data: membriData } = await supabase
-        .from("membri_lega")
-        .select("user_id, profiles(username)")
-        .eq("lega_id", id);
-
-      const membriList = (membriData || []).map(m => ({
-        user_id: m.user_id,
-        username: m.profiles?.username || "Utente",
-      }));
+      const { data: membriData } = await supabase.from("membri_lega").select("user_id, profiles(username)").eq("lega_id", id);
+      const membriList = (membriData || []).map(m => ({ user_id: m.user_id, username: m.profiles?.username || "Utente" }));
       setMembri(membriList);
 
-      // Calcola classifica punti pronostici
       if (membriList.length > 0 && partiteData) {
         const classificaCalcolata = await Promise.all(membriList.map(async (membro) => {
-          const { data: pron } = await supabase
-            .from("pronostici")
-            .select("*")
-            .eq("user_id", membro.user_id)
-            .eq("lega_id", id);
-
-          let puntiTotali = 0;
-          let partiteGiocate = 0;
-
+          const { data: pron } = await supabase.from("pronostici").select("*").eq("user_id", membro.user_id).eq("lega_id", id);
+          let puntiTotali = 0, partiteGiocate = 0;
           (pron || []).forEach(p => {
             const partita = partiteData.find(pt => pt.id === p.partita_id);
             if (partita && partita.gol_home !== null) {
@@ -120,37 +90,19 @@ function Lega() {
               if (pts !== null) { puntiTotali += pts; partiteGiocate++; }
             }
           });
-
-          return {
-            ...membro,
-            punti: puntiTotali,
-            partite_g: partiteGiocate,
-            isMe: membro.user_id === data.user.id,
-            gol: calcolaGol(puntiTotali),
-          };
+          return { ...membro, punti: puntiTotali, partite_g: partiteGiocate, isMe: membro.user_id === data.user.id, gol: punteggioToGol(puntiTotali) };
         }));
         setClassifica(classificaCalcolata.sort((a, b) => b.punti - a.punti));
 
-        // Carica o genera calendario per modalità campionato
         if (legaData.modalita === "campionato") {
-          const { data: calData } = await supabase
-            .from("calendario")
-            .select("*")
-            .eq("lega_id", id)
-            .order("giornata");
-
+          const { data: calData } = await supabase.from("calendario").select("*").eq("lega_id", id).order("giornata");
           if (calData && calData.length > 0) {
             setCalendarioLega(calData);
           } else if (membriList.length >= 2) {
-            // Genera calendario
             const giornateDisp = GIORNATE_PER_COMPETIZIONE[legaData.competizione] || 38;
             const nuovoCalendario = generaCalendario(membriList, giornateDisp);
-
             if (nuovoCalendario.length > 0) {
-              const { data: calInserito } = await supabase
-                .from("calendario")
-                .insert(nuovoCalendario.map(c => ({ ...c, lega_id: id })))
-                .select();
+              const { data: calInserito } = await supabase.from("calendario").insert(nuovoCalendario.map(c => ({ ...c, lega_id: id }))).select();
               if (calInserito) setCalendarioLega(calInserito);
             }
           }
@@ -173,27 +125,26 @@ function Lega() {
     const pred = pronostici[partitaId];
     if (pred?.home === undefined || pred?.away === undefined) return;
     const { error } = await supabase.from("pronostici").upsert({
-      user_id: utente.id,
-      partita_id: partitaId,
-      lega_id: id,
-      gol_home: pred.home,
-      gol_away: pred.away,
+      user_id: utente.id, partita_id: partitaId, lega_id: id,
+      gol_home: pred.home, gol_away: pred.away,
     }, { onConflict: "user_id,partita_id" });
     if (!error) setSalvato(s => ({ ...s, [partitaId]: true }));
     else alert("Errore nel salvataggio");
   }
 
-  if (caricamento) return <div style={{ padding: 40, fontFamily: "Arial" }}>Caricamento...</div>;
+  if (caricamento) return (
+    <div style={{ background: "var(--crema)", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ fontFamily: "Oswald, sans-serif", color: "var(--verde)", letterSpacing: 3, fontSize: 14 }}>CARICAMENTO...</div>
+    </div>
+  );
 
   const partiteLega = lega.competizione && lega.competizione !== "Tutte"
     ? partite.filter(p => p.league === lega.competizione)
     : partite;
 
-  const lc = LEAGUE_COLORS[lega.competizione] || { bg: "#1a6b2a", text: "#fff", flag: "⚽" };
-
+  const lc = LEAGUE_COLORS[lega.competizione] || { bg: "var(--verde)", text: "#fff", flag: "⚽" };
   const giornateUniche = [...new Set(calendarioLega.map(c => c.giornata))].sort((a, b) => a - b);
   const partiteGiornata = calendarioLega.filter(c => c.giornata === giornataSelezionata);
-
   const classificaCampionato = calcolaClassificaCampionato(calendarioLega);
   const classificaConNomi = classificaCampionato.map(c => ({
     ...c,
@@ -201,265 +152,269 @@ function Lega() {
     isMe: c.user_id === utente.id,
   }));
 
+  const tabs = ["partite", "classifica", ...(lega.modalita === "campionato" ? ["calendario"] : [])];
+
   return (
-    <div style={{ maxWidth: 700, margin: "40px auto", padding: "0 20px 60px", fontFamily: "Arial" }}>
+    <div style={{ minHeight: "100vh", background: "var(--crema)" }}>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-        <h1 style={{ color: "#1a6b2a" }}>⚽ Fantabet</h1>
-        <a href="/leghe" style={{ color: "#999", fontSize: 14, textDecoration: "none" }}>← {t("mieLeghe")}</a>
-      </div>
+      {/* Header */}
+      <header style={{ background: "var(--verde)", borderBottom: "4px solid var(--giallo)", padding: "0 40px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 72, boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
+        <a href="/" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 46, height: 46, background: "var(--giallo)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, transform: "rotate(-3deg)", boxShadow: "3px 3px 0 rgba(0,0,0,0.3)" }}>⚽</div>
+          <div>
+            <div style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: 34, color: "var(--giallo)", letterSpacing: 3, lineHeight: 1 }}>Fantabet</div>
+            <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 9, color: "rgba(255,255,255,0.5)", letterSpacing: 3, textTransform: "uppercase" }}>Chi è il più bravo?</div>
+          </div>
+        </a>
+        <a href="/leghe" style={{ fontFamily: "Oswald, sans-serif", fontSize: 13, color: "rgba(255,255,255,0.6)", letterSpacing: 1, textTransform: "uppercase" }}>← {t("mieLeghe")}</a>
+      </header>
 
-      <div style={{ background: lc.bg, borderRadius: 12, padding: "16px 24px", marginBottom: 24, color: "#fff" }}>
-        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>{t("lega")}</div>
-        <div style={{ fontSize: 24, fontWeight: "bold" }}>{lega.nome}</div>
-        <div style={{ marginTop: 8, display: "flex", gap: 20, fontSize: 13, color: "rgba(255,255,255,0.7)", flexWrap: "wrap" }}>
-          <span>{lc.flag} {lega.competizione || t("tutteCompetizioni")}</span>
-          <span>👥 {membri.length}/{lega.max_partecipanti}</span>
-          <span>{lega.modalita === "campionato" ? "⚽ " + t("campionato") : "⭐ " + t("torneo")}</span>
-          <span>🔑 <strong style={{ color: "#ffd700", letterSpacing: 2 }}>{lega.codice}</strong></span>
+      {/* Banner lega */}
+      <div style={{ background: lc.bg, borderBottom: "4px solid var(--giallo)", padding: "24px 40px" }}>
+        <div style={{ maxWidth: 800, margin: "0 auto" }}>
+          <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: 3, textTransform: "uppercase", marginBottom: 4 }}>{t("lega")}</div>
+          <div style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: 42, color: "#fff", letterSpacing: 2, lineHeight: 1 }}>{lega.nome}</div>
+          <div style={{ display: "flex", gap: 24, marginTop: 8, fontFamily: "Oswald, sans-serif", fontSize: 13, color: "rgba(255,255,255,0.6)", flexWrap: "wrap", letterSpacing: 1 }}>
+            <span>{lc.flag} {lega.competizione || t("tutteCompetizioni")}</span>
+            <span>{"👥"} {membri.length}/{lega.max_partecipanti}</span>
+            <span>{lega.modalita === "campionato" ? "⚽ " + t("campionato") : "⭐ " + t("torneo")}</span>
+            <span>{"🔑"} <strong style={{ color: "var(--giallo)", letterSpacing: 4, fontFamily: "Bebas Neue, sans-serif", fontSize: 16 }}>{lega.codice}</strong></span>
+          </div>
         </div>
       </div>
 
       {/* Tab */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 24, background: "#f5f5f5", borderRadius: 8, padding: 4 }}>
-        {["partite", "classifica", ...(lega.modalita === "campionato" ? ["calendario"] : [])].map(tb => (
-          <button key={tb} onClick={() => setTab(tb)} style={{
-            flex: 1, padding: "10px", borderRadius: 6, border: "none",
-            background: tab === tb ? "#fff" : "transparent",
-            fontWeight: tab === tb ? "bold" : "normal",
-            color: tab === tb ? "#1a6b2a" : "#999",
-            cursor: "pointer", fontSize: 14,
-            boxShadow: tab === tb ? "0 1px 4px rgba(0,0,0,0.1)" : "none"
-          }}>
-            {tb === "partite" ? `🗓 ${t("partite")}` : tb === "classifica" ? `🏆 ${t("classifica")}` : "📅 Calendario"}
-          </button>
-        ))}
+      <div style={{ background: "var(--verde-scuro)", borderBottom: "2px solid rgba(255,255,255,0.1)" }}>
+        <div style={{ maxWidth: 800, margin: "0 auto", display: "flex" }}>
+          {tabs.map(tb => (
+            <button key={tb} onClick={() => setTab(tb)} style={{
+              padding: "14px 28px", border: "none", background: "transparent",
+              fontFamily: "Bebas Neue, sans-serif", fontSize: 18, letterSpacing: 2,
+              color: tab === tb ? "var(--giallo)" : "rgba(255,255,255,0.4)",
+              cursor: "pointer", borderBottom: tab === tb ? "3px solid var(--giallo)" : "3px solid transparent",
+              textTransform: "uppercase"
+            }}>
+              {tb === "partite" ? `🗓 ${t("partite")}` : tb === "classifica" ? `🏆 ${t("classifica")}` : "📅 Calendario"}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* TAB PARTITE */}
-      {tab === "partite" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {partiteLega.length === 0 ? (
-            <div style={{ border: "2px dashed #ddd", borderRadius: 10, padding: 32, textAlign: "center", color: "#aaa" }}>
-              {t("nessunaPart")} {lega.competizione}
-            </div>
-          ) : partiteLega.map(partita => {
-            const pred = pronostici[partita.id];
-            const hasPred = pred?.home !== undefined && pred?.away !== undefined;
-            const reale = partita.gol_home !== null ? partita : null;
-            const pts = reale && pred ? calcPunti(pred, reale) : null;
-            const plc = LEAGUE_COLORS[partita.league] || { bg: "#333", text: "#fff", flag: "⚽" };
+      <div style={{ maxWidth: 800, margin: "0 auto", padding: "32px 40px 60px" }}>
 
-            return (
-              <div key={partita.id} style={{
-                background: "#fff", color: "#1a1a1a",
-                border: `1px solid ${pts !== null ? (pts >= 7 ? "#00c896" : pts >= 3 ? "#f5c518" : "#ff5050") : "#eee"}`,
-                borderRadius: 12, overflow: "hidden",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.06)"
-              }}>
-                <div style={{ background: plc.bg, padding: "6px 16px", display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: plc.text, fontSize: 12, fontWeight: "bold" }}>{plc.flag} {partita.league}</span>
-                  <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}>
-                    {new Date(partita.match_date).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })} · {new Date(partita.match_date).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                </div>
-                <div style={{ padding: "20px 24px" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 16 }}>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontWeight: "bold", fontSize: 18 }}>{partita.home}</div>
-                      <div style={{ fontSize: 11, color: "#aaa" }}>{t("casa")}</div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {!reale ? (
-                        <>
-                          <input type="number" min="0" max="20" value={pred?.home ?? ""}
-                            onChange={e => setPred(partita.id, "home", e.target.value)}
-                            placeholder="–"
-                            style={{ width: 52, height: 52, textAlign: "center", fontSize: 22, fontWeight: "bold", border: `2px solid ${hasPred ? "#1a6b2a" : "#ddd"}`, borderRadius: 8, color: "#1a6b2a", outline: "none", background: "#fff" }}
-                          />
-                          <span style={{ color: "#ccc", fontSize: 20 }}>:</span>
-                          <input type="number" min="0" max="20" value={pred?.away ?? ""}
-                            onChange={e => setPred(partita.id, "away", e.target.value)}
-                            placeholder="–"
-                            style={{ width: 52, height: 52, textAlign: "center", fontSize: 22, fontWeight: "bold", border: `2px solid ${hasPred ? "#1a6b2a" : "#ddd"}`, borderRadius: 8, color: "#1a6b2a", outline: "none", background: "#fff" }}
-                          />
-                        </>
-                      ) : (
-                        <div style={{ textAlign: "center" }}>
-                          <div style={{ fontSize: 32, fontWeight: "bold" }}>{reale.gol_home} – {reale.gol_away}</div>
-                          <div style={{ fontSize: 11, color: "#aaa" }}>{t("risultatoFinale")}</div>
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontWeight: "bold", fontSize: 18 }}>{partita.away}</div>
-                      <div style={{ fontSize: 11, color: "#aaa" }}>{t("ospite")}</div>
-                    </div>
-                  </div>
-                  <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #f5f5f5", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ fontSize: 12, color: "#aaa" }}>
-                      {hasPred && !reale && (salvato[partita.id]
-                        ? <span style={{ color: "#1a6b2a" }}>✓ {t("salvato")}: {pred.home}–{pred.away}</span>
-                        : <span style={{ color: "#f5a623" }}>● {t("nonSalvato")}</span>)}
-                      {!hasPred && !reale && t("inserisciPronostico")}
-                      {reale && pred && <span>Tuo: {pred.home}–{pred.away}</span>}
-                    </div>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      {pts !== null && (
-                        <span style={{
-                          padding: "4px 12px", borderRadius: 20, fontWeight: "bold", fontSize: 13,
-                          background: pts >= 7 ? "rgba(0,200,150,0.1)" : pts >= 3 ? "rgba(245,197,24,0.1)" : "rgba(255,80,80,0.1)",
-                          color: pts >= 7 ? "#00c896" : pts >= 3 ? "#d4a017" : "#ff5050"
-                        }}>{pts === 10 ? "🔥 " : ""}+{pts} pt</span>
-                      )}
-                      {hasPred && !reale && !salvato[partita.id] && (
-                        <button onClick={() => salvaPronostico(partita.id)} style={{ padding: "6px 14px", background: "#1a6b2a", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
-                          {t("salva")}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
+        {/* TAB PARTITE */}
+        {tab === "partite" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {partiteLega.length === 0 ? (
+              <div style={{ border: "3px dashed #ddd", borderRadius: 6, padding: 40, textAlign: "center", color: "var(--grigio-caldo)", fontFamily: "Oswald, sans-serif", letterSpacing: 2, textTransform: "uppercase" }}>
+                {t("nessunaPart")} {lega.competizione}
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* TAB CLASSIFICA */}
-      {tab === "classifica" && (
-        <div>
-          {lega.modalita === "campionato" && classificaConNomi.length > 0 ? (
-            <>
-              {/* Classifica campionato V/P/S */}
-              <div style={{ background: "#fff", borderRadius: 10, overflow: "hidden", border: "1px solid #eee", marginBottom: 20 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr repeat(6, auto)", gap: 0, background: "#f5f5f5", padding: "10px 16px", fontSize: 11, color: "#999", fontWeight: "bold", letterSpacing: 1 }}>
-                  <div style={{ width: 32 }}>#</div>
-                  <div>GIOCATORE</div>
-                  <div style={{ width: 32, textAlign: "center" }}>G</div>
-                  <div style={{ width: 32, textAlign: "center" }}>V</div>
-                  <div style={{ width: 32, textAlign: "center" }}>P</div>
-                  <div style={{ width: 32, textAlign: "center" }}>S</div>
-                  <div style={{ width: 48, textAlign: "center" }}>GF:GS</div>
-                  <div style={{ width: 40, textAlign: "center" }}>PTS</div>
-                </div>
-                {classificaConNomi.map((g, i) => (
-                  <div key={g.user_id} style={{
-                    display: "grid", gridTemplateColumns: "auto 1fr repeat(6, auto)",
-                    gap: 0, padding: "12px 16px", alignItems: "center",
-                    borderTop: "1px solid #f5f5f5",
-                    background: g.isMe ? "rgba(26,107,42,0.05)" : "#fff",
-                    color: "#1a1a1a"
-                  }}>
-                    <div style={{ width: 32, fontWeight: "bold", color: "#999", fontSize: 13 }}>{i + 1}</div>
-                    <div style={{ fontWeight: g.isMe ? "bold" : "normal", color: g.isMe ? "#1a6b2a" : "#333" }}>
-                      {g.username}
-                      {g.isMe && <span style={{ marginLeft: 6, fontSize: 9, background: "#1a6b2a", color: "#fff", padding: "1px 5px", borderRadius: 3 }}>TU</span>}
-                    </div>
-                    <div style={{ width: 32, textAlign: "center", fontSize: 13, color: "#666" }}>{g.v + g.p + g.s}</div>
-                    <div style={{ width: 32, textAlign: "center", fontSize: 13, color: "#00c896", fontWeight: "bold" }}>{g.v}</div>
-                    <div style={{ width: 32, textAlign: "center", fontSize: 13, color: "#f5a623" }}>{g.p}</div>
-                    <div style={{ width: 32, textAlign: "center", fontSize: 13, color: "#ff5050" }}>{g.s}</div>
-                    <div style={{ width: 48, textAlign: "center", fontSize: 12, color: "#666" }}>{g.gf}:{g.gs}</div>
-                    <div style={{ width: 40, textAlign: "center", fontWeight: "bold", fontSize: 16, color: g.isMe ? "#1a6b2a" : "#333" }}>{g.punti}</div>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {classifica.map((g, i) => (
-                <div key={g.user_id} style={{
-                  background: g.isMe ? "rgba(26,107,42,0.08)" : "#fff",
-                  border: `1px solid ${g.isMe ? "rgba(26,107,42,0.3)" : "#eee"}`,
-                  borderRadius: 10, padding: "16px 20px",
-                  display: "flex", alignItems: "center", gap: 16,
-                  color: "#1a1a1a"
-                }}>
-                  <div style={{ fontSize: i < 3 ? 28 : 20, width: 36, textAlign: "center", fontWeight: "bold", color: i >= 3 ? "#ccc" : "inherit" }}>
-                    {["🥇","🥈","🥉"][i] || `${i+1}°`}
-                  </div>
-                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: g.isMe ? "#1a6b2a" : "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", fontSize: 14, color: g.isMe ? "#fff" : "#999" }}>
-                    {g.username.slice(0,2).toUpperCase()}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: "bold", fontSize: 15, color: "#333" }}>
-                      {g.username}
-                      {g.isMe && <span style={{ marginLeft: 8, fontSize: 10, background: "#1a6b2a", color: "#fff", padding: "2px 6px", borderRadius: 4 }}>TU</span>}
-                    </div>
-                    <div style={{ fontSize: 12, color: "#aaa", marginTop: 2 }}>{g.partite_g} {t("partiteGiocate")}</div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 26, fontWeight: "bold", color: g.isMe ? "#1a6b2a" : "#333" }}>{g.punti}</div>
-                    <div style={{ fontSize: 11, color: "#aaa" }}>{g.gol} {t("golVirtuali")}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB CALENDARIO */}
-      {tab === "calendario" && (
-        <div>
-          {/* Selettore giornata */}
-          <div style={{ display: "flex", gap: 6, marginBottom: 20, flexWrap: "wrap" }}>
-            {giornateUniche.slice(0, 20).map(g => (
-              <button key={g} onClick={() => setGiornataSelezionata(g)} style={{
-                padding: "6px 12px", borderRadius: 6,
-                border: `1px solid ${giornataSelezionata === g ? "#1a6b2a" : "#ddd"}`,
-                background: giornataSelezionata === g ? "#1a6b2a" : "transparent",
-                color: giornataSelezionata === g ? "#fff" : "#666",
-                cursor: "pointer", fontSize: 13, fontWeight: "bold"
-              }}>G{g}</button>
-            ))}
-          </div>
-
-          {/* Partite della giornata */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {partiteGiornata.map((match, i) => {
-              const p1 = membri.find(m => m.user_id === match.player1_id);
-              const p2 = membri.find(m => m.user_id === match.player2_id);
-              const hasResult = match.gol_player1 > 0 || match.gol_player2 > 0;
+            ) : partiteLega.map(partita => {
+              const pred = pronostici[partita.id];
+              const hasPred = pred?.home !== undefined && pred?.away !== undefined;
+              const reale = partita.gol_home !== null ? partita : null;
+              const pts = reale && pred ? calcPunti(pred, reale) : null;
+              const plc = LEAGUE_COLORS[partita.league] || { bg: "var(--verde-scuro)", text: "#fff", flag: "⚽" };
 
               return (
-                <div key={i} style={{ background: "#fff", borderRadius: 10, padding: 20, border: "1px solid #eee", color: "#1a1a1a" }}>
-                  <div style={{ fontSize: 11, color: "#aaa", marginBottom: 12, textAlign: "center" }}>
-                    Girone {match.girone} · Giornata {match.giornata}
+                <div key={partita.id} style={{
+                  background: "#fff", border: "2px solid #e8e0d5", borderRadius: 6,
+                  overflow: "hidden", boxShadow: "4px 4px 0 rgba(0,0,0,0.08)",
+                  borderLeft: pts !== null ? `6px solid ${pts >= 7 ? "#00c896" : pts >= 3 ? "var(--giallo)" : "var(--rosso)"}` : "2px solid #e8e0d5"
+                }}>
+                  {/* Header partita */}
+                  <div style={{ background: plc.bg, padding: "6px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ color: plc.text, fontFamily: "Oswald, sans-serif", fontSize: 12, letterSpacing: 2, textTransform: "uppercase" }}>{plc.flag} {partita.league}</span>
+                    <span style={{ color: "rgba(255,255,255,0.5)", fontFamily: "Barlow, sans-serif", fontSize: 11 }}>
+                      {new Date(partita.match_date).toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" })} · {new Date(partita.match_date).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 16 }}>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ width: 44, height: 44, borderRadius: "50%", background: match.player1_id === utente.id ? "#1a6b2a" : "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", fontSize: 14, color: match.player1_id === utente.id ? "#fff" : "#999", margin: "0 auto 8px" }}>
-                        {(p1?.username || "?").slice(0,2).toUpperCase()}
+
+                  <div style={{ padding: "20px 24px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 16 }}>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: 22, letterSpacing: 1, color: "var(--marrone)" }}>{partita.home}</div>
+                        <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 10, color: "var(--grigio-caldo)", letterSpacing: 2, textTransform: "uppercase" }}>{t("casa")}</div>
                       </div>
-                      <div style={{ fontWeight: "bold", fontSize: 14 }}>{p1?.username || "?"}</div>
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      {hasResult ? (
-                        <div style={{ fontSize: 28, fontWeight: "bold" }}>{match.gol_player1} – {match.gol_player2}</div>
-                      ) : (
-                        <div style={{ fontSize: 22, color: "#ccc" }}>vs</div>
-                      )}
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ width: 44, height: 44, borderRadius: "50%", background: match.player2_id === utente.id ? "#1a6b2a" : "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", fontSize: 14, color: match.player2_id === utente.id ? "#fff" : "#999", margin: "0 auto 8px" }}>
-                        {(p2?.username || "?").slice(0,2).toUpperCase()}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {!reale ? (
+                          <>
+                            <input type="number" min="0" max="20" value={pred?.home ?? ""}
+                              onChange={e => setPred(partita.id, "home", e.target.value)}
+                              placeholder="–"
+                              style={{ width: 56, height: 56, textAlign: "center", fontSize: 24, fontWeight: "bold", fontFamily: "Bebas Neue, sans-serif", border: `3px solid ${hasPred ? "var(--verde)" : "#ddd"}`, borderRadius: 4, color: "var(--verde)", outline: "none", background: "var(--crema)" }}
+                            />
+                            <span style={{ color: "#ccc", fontSize: 24, fontFamily: "Bebas Neue, sans-serif" }}>:</span>
+                            <input type="number" min="0" max="20" value={pred?.away ?? ""}
+                              onChange={e => setPred(partita.id, "away", e.target.value)}
+                              placeholder="–"
+                              style={{ width: 56, height: 56, textAlign: "center", fontSize: 24, fontWeight: "bold", fontFamily: "Bebas Neue, sans-serif", border: `3px solid ${hasPred ? "var(--verde)" : "#ddd"}`, borderRadius: 4, color: "var(--verde)", outline: "none", background: "var(--crema)" }}
+                            />
+                          </>
+                        ) : (
+                          <div style={{ textAlign: "center" }}>
+                            <div style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: 36, letterSpacing: 2, color: "var(--marrone)" }}>{reale.gol_home} – {reale.gol_away}</div>
+                            <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 10, color: "var(--grigio-caldo)", letterSpacing: 2, textTransform: "uppercase" }}>{t("risultatoFinale")}</div>
+                          </div>
+                        )}
                       </div>
-                      <div style={{ fontWeight: "bold", fontSize: 14 }}>{p2?.username || "?"}</div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: 22, letterSpacing: 1, color: "var(--marrone)" }}>{partita.away}</div>
+                        <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 10, color: "var(--grigio-caldo)", letterSpacing: 2, textTransform: "uppercase" }}>{t("ospite")}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #f0ebe3", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ fontFamily: "Barlow, sans-serif", fontSize: 12, color: "var(--grigio-caldo)", fontStyle: "italic" }}>
+                        {hasPred && !reale && (salvato[partita.id]
+                          ? <span style={{ color: "var(--verde)" }}>✓ {t("salvato")}: {pred.home}–{pred.away}</span>
+                          : <span style={{ color: "var(--giallo-scuro)" }}>● {t("nonSalvato")}</span>)}
+                        {!hasPred && !reale && t("inserisciPronostico")}
+                        {reale && pred && <span>Tuo: {pred.home}–{pred.away}</span>}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        {pts !== null && (
+                          <span style={{
+                            padding: "4px 12px", borderRadius: 2, fontFamily: "Bebas Neue, sans-serif", fontSize: 16, letterSpacing: 1,
+                            background: pts >= 7 ? "rgba(0,200,150,0.1)" : pts >= 3 ? "rgba(245,197,24,0.15)" : "rgba(192,57,43,0.1)",
+                            color: pts >= 7 ? "#00c896" : pts >= 3 ? "var(--giallo-scuro)" : "var(--rosso)",
+                            border: `1px solid ${pts >= 7 ? "#00c896" : pts >= 3 ? "var(--giallo)" : "var(--rosso)"}`
+                          }}>{pts === 10 ? "🔥 " : ""}+{pts} PT</span>
+                        )}
+                        {hasPred && !reale && !salvato[partita.id] && (
+                          <button onClick={() => salvaPronostico(partita.id)} style={{ padding: "6px 16px", background: "var(--verde)", color: "var(--giallo)", border: "none", borderRadius: 4, cursor: "pointer", fontFamily: "Bebas Neue, sans-serif", fontSize: 16, letterSpacing: 1, boxShadow: "2px 2px 0 var(--verde-scuro)" }}>
+                            {t("salva")}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
               );
             })}
-            {partiteGiornata.length === 0 && (
-              <div style={{ border: "2px dashed #ddd", borderRadius: 10, padding: 32, textAlign: "center", color: "#aaa" }}>
-                Nessuna partita per questa giornata
+          </div>
+        )}
+
+        {/* TAB CLASSIFICA */}
+        {tab === "classifica" && (
+          <div>
+            {lega.modalita === "campionato" && classificaConNomi.length > 0 ? (
+              <div style={{ background: "#fff", border: "2px solid #e8e0d5", borderRadius: 6, overflow: "hidden", boxShadow: "4px 4px 0 rgba(0,0,0,0.08)" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "40px 1fr repeat(6, 36px)", gap: 0, background: "var(--verde-scuro)", padding: "10px 16px" }}>
+                  {["#", "GIOCATORE", "G", "V", "P", "S", "GF:GS", "PTS"].map((h, i) => (
+                    <div key={i} style={{ fontFamily: "Oswald, sans-serif", fontSize: 11, color: "rgba(255,255,255,0.5)", letterSpacing: 2, textAlign: i > 1 ? "center" : "left" }}>{h}</div>
+                  ))}
+                </div>
+                {classificaConNomi.map((g, i) => (
+                  <div key={g.user_id} style={{
+                    display: "grid", gridTemplateColumns: "40px 1fr repeat(6, 36px)",
+                    padding: "14px 16px", alignItems: "center",
+                    borderTop: "1px solid #f0ebe3",
+                    background: g.isMe ? "rgba(26,107,42,0.05)" : "#fff"
+                  }}>
+                    <div style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: 18, color: i < 3 ? "var(--giallo-scuro)" : "var(--grigio-caldo)" }}>{i + 1}</div>
+                    <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 15, color: g.isMe ? "var(--verde)" : "var(--marrone)", fontWeight: g.isMe ? "bold" : "normal", letterSpacing: 1 }}>
+                      {g.username}
+                      {g.isMe && <span style={{ marginLeft: 8, fontSize: 9, background: "var(--verde)", color: "#fff", padding: "2px 6px", borderRadius: 2 }}>TU</span>}
+                    </div>
+                    {[g.v + g.p + g.s, g.v, g.p, g.s, `${g.gf}:${g.gs}`, g.punti].map((val, j) => (
+                      <div key={j} style={{ textAlign: "center", fontFamily: j === 5 ? "Bebas Neue, sans-serif" : "Oswald, sans-serif", fontSize: j === 5 ? 20 : 13, color: j === 1 ? "#00c896" : j === 3 ? "var(--rosso)" : j === 5 ? (g.isMe ? "var(--verde)" : "var(--marrone)") : "var(--grigio-caldo)", fontWeight: j === 5 ? "bold" : "normal" }}>{val}</div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {classifica.map((g, i) => (
+                  <div key={g.user_id} style={{
+                    background: g.isMe ? "rgba(26,107,42,0.06)" : "#fff",
+                    border: `2px solid ${g.isMe ? "rgba(26,107,42,0.3)" : "#e8e0d5"}`,
+                    borderRadius: 6, padding: "16px 20px",
+                    display: "flex", alignItems: "center", gap: 16,
+                    boxShadow: "3px 3px 0 rgba(0,0,0,0.06)"
+                  }}>
+                    <div style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: i < 3 ? 32 : 22, width: 40, textAlign: "center", color: i < 3 ? "var(--giallo-scuro)" : "var(--grigio-caldo)" }}>
+                      {["🥇","🥈","🥉"][i] || `${i+1}°`}
+                    </div>
+                    <div style={{ width: 44, height: 44, borderRadius: "50%", background: g.isMe ? "var(--verde)" : "var(--crema)", border: "2px solid #ddd", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Bebas Neue, sans-serif", fontSize: 16, color: g.isMe ? "var(--giallo)" : "var(--grigio-caldo)" }}>
+                      {g.username.slice(0,2).toUpperCase()}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 16, color: "var(--marrone)", letterSpacing: 1 }}>
+                        {g.username}
+                        {g.isMe && <span style={{ marginLeft: 8, fontSize: 9, background: "var(--verde)", color: "#fff", padding: "2px 6px", borderRadius: 2 }}>TU</span>}
+                      </div>
+                      <div style={{ fontFamily: "Barlow, sans-serif", fontSize: 12, color: "var(--grigio-caldo)", fontStyle: "italic", marginTop: 2 }}>{g.partite_g} {t("partiteGiocate")}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: 32, color: g.isMe ? "var(--verde)" : "var(--marrone)", letterSpacing: 1 }}>{g.punti}</div>
+                      <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 11, color: "var(--grigio-caldo)", letterSpacing: 1 }}>{g.gol} {t("golVirtuali")}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
+
+        {/* TAB CALENDARIO */}
+        {tab === "calendario" && (
+          <div>
+            <div style={{ display: "flex", gap: 6, marginBottom: 24, flexWrap: "wrap" }}>
+              {giornateUniche.slice(0, 20).map(g => (
+                <button key={g} onClick={() => setGiornataSelezionata(g)} style={{
+                  padding: "6px 14px", borderRadius: 4,
+                  border: `2px solid ${giornataSelezionata === g ? "var(--verde)" : "#ddd"}`,
+                  background: giornataSelezionata === g ? "var(--verde)" : "transparent",
+                  color: giornataSelezionata === g ? "var(--giallo)" : "var(--grigio-caldo)",
+                  cursor: "pointer", fontFamily: "Bebas Neue, sans-serif", fontSize: 16, letterSpacing: 1
+                }}>G{g}</button>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {partiteGiornata.map((match, i) => {
+                const p1 = membri.find(m => m.user_id === match.player1_id);
+                const p2 = membri.find(m => m.user_id === match.player2_id);
+                const hasResult = match.gol_player1 > 0 || match.gol_player2 > 0;
+
+                return (
+                  <div key={i} style={{ background: "#fff", border: "2px solid #e8e0d5", borderRadius: 6, padding: 24, boxShadow: "4px 4px 0 rgba(0,0,0,0.08)" }}>
+                    <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 11, color: "var(--grigio-caldo)", marginBottom: 16, textAlign: "center", letterSpacing: 2, textTransform: "uppercase" }}>
+                      Girone {match.girone} · Giornata {match.giornata}
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 16 }}>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ width: 48, height: 48, borderRadius: "50%", background: match.player1_id === utente.id ? "var(--verde)" : "var(--crema)", border: "2px solid #ddd", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Bebas Neue, sans-serif", fontSize: 16, color: match.player1_id === utente.id ? "var(--giallo)" : "var(--grigio-caldo)", margin: "0 auto 8px" }}>
+                          {(p1?.username || "?").slice(0,2).toUpperCase()}
+                        </div>
+                        <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 14, color: "var(--marrone)", letterSpacing: 1 }}>{p1?.username || "?"}</div>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        {hasResult
+                          ? <div style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: 32, color: "var(--marrone)", letterSpacing: 2 }}>{match.gol_player1} – {match.gol_player2}</div>
+                          : <div style={{ fontFamily: "Bebas Neue, sans-serif", fontSize: 24, color: "var(--grigio-caldo)", letterSpacing: 2 }}>VS</div>
+                        }
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ width: 48, height: 48, borderRadius: "50%", background: match.player2_id === utente.id ? "var(--verde)" : "var(--crema)", border: "2px solid #ddd", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Bebas Neue, sans-serif", fontSize: 16, color: match.player2_id === utente.id ? "var(--giallo)" : "var(--grigio-caldo)", margin: "0 auto 8px" }}>
+                          {(p2?.username || "?").slice(0,2).toUpperCase()}
+                        </div>
+                        <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 14, color: "var(--marrone)", letterSpacing: 1 }}>{p2?.username || "?"}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {partiteGiornata.length === 0 && (
+                <div style={{ border: "3px dashed #ddd", borderRadius: 6, padding: 40, textAlign: "center", color: "var(--grigio-caldo)", fontFamily: "Oswald, sans-serif", letterSpacing: 2, textTransform: "uppercase" }}>
+                  Nessuna partita per questa giornata
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
