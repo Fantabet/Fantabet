@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "crons": [
@@ -7,5 +8,10 @@
       "path": "/api/cron",
       "schedule": "0 8,14,20 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "api/cron.js": {
+      "runtime": "edge"
+    }
+  }
 }
