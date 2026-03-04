@@ -1,4 +1,4 @@
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -36,8 +36,7 @@ async function getGiornataCorrente(leagueCode) {
   return data.currentSeason?.currentMatchday || 1;
 }
 
-module.exports = async (req, res) => {
-  // Verifica che sia una chiamata autorizzata
+export default async function handler(req, res) {
   const authHeader = req.headers.authorization;
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: "Non autorizzato" });
@@ -70,4 +69,4 @@ module.exports = async (req, res) => {
   }
 
   res.status(200).json({ aggiornate: risultati.length, dettagli: risultati });
-};
+}
