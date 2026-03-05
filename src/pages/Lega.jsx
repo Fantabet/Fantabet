@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../supabase";
 import { t } from "../i18n";
@@ -53,6 +53,7 @@ function Lega() {
   const [tab, setTab] = useState("partite");
   const [giornataSelezionata, setGiornataSelezionata] = useState(1);
   const [caricamento, setCaricamento] = useState(true);
+  const calendarioGenerato = useRef(false);
 
   useEffect(() => {
     async function init() {
@@ -94,7 +95,8 @@ function Lega() {
         }));
         setClassifica(classificaCalcolata.sort((a, b) => b.punti - a.punti));
 
-        if (legaData.modalita === "campionato") {
+        if (legaData.modalita === "campionato" && !calendarioGenerato.current) {
+          calendarioGenerato.current = true;
           const { data: calData } = await supabase.from("calendario").select("*").eq("lega_id", id).order("giornata");
           if (calData && calData.length > 0) {
             setCalendarioLega(calData);
@@ -124,6 +126,14 @@ function Lega() {
   async function salvaPronostico(partitaId) {
     const pred = pronostici[partitaId];
     if (pred?.home === undefined || pred?.away === undefined) return;
+
+    // Controlla se la partita è già iniziata
+    const partita = partite.find(p => p.id === partitaId);
+    if (partita && new Date(partita.match_date) < new Date()) {
+      alert("Non puoi più modificare il pronostico — la partita è già iniziata!");
+      return;
+    }
+
     const { error } = await supabase.from("pronostici").upsert({
       user_id: utente.id, partita_id: partitaId, lega_id: id,
       gol_home: pred.home, gol_away: pred.away,
@@ -192,7 +202,6 @@ function Lega() {
               fontFamily: "Bebas Neue, sans-serif", fontSize: 18, letterSpacing: 2,
               color: tab === tb ? "var(--giallo)" : "rgba(255,255,255,0.4)",
               cursor: "pointer", borderBottom: tab === tb ? "3px solid var(--giallo)" : "3px solid transparent",
-              textTransform: "uppercase"
             }}>
               {tb === "partite" ? `🗓 ${t("partite")}` : tb === "classifica" ? `🏆 ${t("classifica")}` : "📅 Calendario"}
             </button>
@@ -215,6 +224,7 @@ function Lega() {
               const reale = partita.gol_home !== null ? partita : null;
               const pts = reale && pred ? calcPunti(pred, reale) : null;
               const plc = LEAGUE_COLORS[partita.league] || { bg: "var(--verde-scuro)", text: "#fff", flag: "⚽" };
+              const partitaIniziata = new Date(partita.match_date) < new Date();
 
               return (
                 <div key={partita.id} style={{
@@ -222,7 +232,6 @@ function Lega() {
                   overflow: "hidden", boxShadow: "4px 4px 0 rgba(0,0,0,0.08)",
                   borderLeft: pts !== null ? `6px solid ${pts >= 7 ? "#00c896" : pts >= 3 ? "var(--giallo)" : "var(--rosso)"}` : "2px solid #e8e0d5"
                 }}>
-                  {/* Header partita */}
                   <div style={{ background: plc.bg, padding: "6px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ color: plc.text, fontFamily: "Oswald, sans-serif", fontSize: 12, letterSpacing: 2, textTransform: "uppercase" }}>{plc.flag} {partita.league}</span>
                     <span style={{ color: "rgba(255,255,255,0.5)", fontFamily: "Barlow, sans-serif", fontSize: 11 }}>
@@ -241,14 +250,14 @@ function Lega() {
                           <>
                             <input type="number" min="0" max="20" value={pred?.home ?? ""}
                               onChange={e => setPred(partita.id, "home", e.target.value)}
-                              placeholder="–"
-                              style={{ width: 56, height: 56, textAlign: "center", fontSize: 24, fontWeight: "bold", fontFamily: "Bebas Neue, sans-serif", border: `3px solid ${hasPred ? "var(--verde)" : "#ddd"}`, borderRadius: 4, color: "var(--verde)", outline: "none", background: "var(--crema)" }}
+                              placeholder="–" disabled={partitaIniziata}
+                              style={{ width: 56, height: 56, textAlign: "center", fontSize: 24, fontFamily: "Bebas Neue, sans-serif", border: `3px solid ${hasPred ? "var(--verde)" : "#ddd"}`, borderRadius: 4, color: "var(--verde)", outline: "none", background: partitaIniziata ? "#f5f5f5" : "var(--crema)", cursor: partitaIniziata ? "not-allowed" : "text" }}
                             />
                             <span style={{ color: "#ccc", fontSize: 24, fontFamily: "Bebas Neue, sans-serif" }}>:</span>
                             <input type="number" min="0" max="20" value={pred?.away ?? ""}
                               onChange={e => setPred(partita.id, "away", e.target.value)}
-                              placeholder="–"
-                              style={{ width: 56, height: 56, textAlign: "center", fontSize: 24, fontWeight: "bold", fontFamily: "Bebas Neue, sans-serif", border: `3px solid ${hasPred ? "var(--verde)" : "#ddd"}`, borderRadius: 4, color: "var(--verde)", outline: "none", background: "var(--crema)" }}
+                              placeholder="–" disabled={partitaIniziata}
+                              style={{ width: 56, height: 56, textAlign: "center", fontSize: 24, fontFamily: "Bebas Neue, sans-serif", border: `3px solid ${hasPred ? "var(--verde)" : "#ddd"}`, borderRadius: 4, color: "var(--verde)", outline: "none", background: partitaIniziata ? "#f5f5f5" : "var(--crema)", cursor: partitaIniziata ? "not-allowed" : "text" }}
                             />
                           </>
                         ) : (
@@ -266,10 +275,11 @@ function Lega() {
 
                     <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #f0ebe3", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ fontFamily: "Barlow, sans-serif", fontSize: 12, color: "var(--grigio-caldo)", fontStyle: "italic" }}>
-                        {hasPred && !reale && (salvato[partita.id]
+                        {partitaIniziata && !reale && <span style={{ color: "var(--rosso)" }}>🔒 Partita iniziata</span>}
+                        {!partitaIniziata && hasPred && (salvato[partita.id]
                           ? <span style={{ color: "var(--verde)" }}>✓ {t("salvato")}: {pred.home}–{pred.away}</span>
                           : <span style={{ color: "var(--giallo-scuro)" }}>● {t("nonSalvato")}</span>)}
-                        {!hasPred && !reale && t("inserisciPronostico")}
+                        {!partitaIniziata && !hasPred && t("inserisciPronostico")}
                         {reale && pred && <span>Tuo: {pred.home}–{pred.away}</span>}
                       </div>
                       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -281,7 +291,7 @@ function Lega() {
                             border: `1px solid ${pts >= 7 ? "#00c896" : pts >= 3 ? "var(--giallo)" : "var(--rosso)"}`
                           }}>{pts === 10 ? "🔥 " : ""}+{pts} PT</span>
                         )}
-                        {hasPred && !reale && !salvato[partita.id] && (
+                        {hasPred && !reale && !salvato[partita.id] && !partitaIniziata && (
                           <button onClick={() => salvaPronostico(partita.id)} style={{ padding: "6px 16px", background: "var(--verde)", color: "var(--giallo)", border: "none", borderRadius: 4, cursor: "pointer", fontFamily: "Bebas Neue, sans-serif", fontSize: 16, letterSpacing: 1, boxShadow: "2px 2px 0 var(--verde-scuro)" }}>
                             {t("salva")}
                           </button>
